@@ -1,29 +1,146 @@
-# Simple OJIP Pipeline (Supplementary Release)
+# Quick Prediction of Inhibiting Compounds with OJIP & Lasso Regression
 
-This folder contains a compact Python script that reproduces the minimum
-data-processing steps requested for the Supplementary Materials. It is
-written to be easy to read rather than feature complete.
+[![Python](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Status](https://img.shields.io/badge/Status-Research-orange.svg)]()
 
-## Files
+This folder contains a compact Python script that reproduces the minimum data-processing steps to predict photosynthetic inhibiting product (e.g., free ammonia) using OJIP parameters. It is written to be easy to read rather than feature complete.
 
-- `ojip_lasso_regression.py` – single-file workflow that:
- 1. Loads metadata describing sample combinations and AquaPen file names.
- 2. Reads AquaPen raw fluorescence text files, applies spline smoothing,
-     and exports the smoothed curves.
- 3. Calculates a focused set of OJIP variables and lightweight quality
-     flags, saving them as CSV (CAP-style table with `Sample_ID` rows).
- 4. Splits data into teaching and prediction groups, runs nested
-    cross-validation (Lasso regression using a 1-SE rule), and exports a teaching vs.
-     prediction scatter figure mimicking Figure 6.
- 5. Writes all processed CSV files to `Output/`.
+---
 
-## Cross-platform and runtime notes
+## 📊 Overview
 
-- The script is cross-platform (Windows/macOS/Linux). It uses script-relative paths, so you can run it from any current working directory; running from the repository root is recommended.
-- A non-interactive Matplotlib backend (Agg) is used, so figures render correctly in headless or CI environments.
-- All inputs are read from `CSV/` and all outputs are written to `Output/` under the repository folder.
+![Workflow Overview](https://raw.githubusercontent.com/MasaK2010/OJIPLasso/main/ojip_workflow_overview.png)
 
-## Preparation: AquaPen OJIP data and metadata
+**Chlorophyll fluorescence-based prediction of ammonia:** This project implements a Lasso-based regression model that integrates OJIP parameters with applicability domain (AD) and prediction interval (PI) validation. The workflow extracts fluorescent parameters from OJIP curves, performs nested cross-validation, and provides robust concentration predictions with quality checks.
+
+### Key Features
+
+- 🔬 **OJIP Parameter Extraction** – Automated calculation of chlorophyll fluorescence transient parameters
+- 📈 **Lasso Regression with Nested CV** – Robust feature selection using 1-SE rule
+- ✅ **Applicability Domain Check** – Automatic identification of out-of-domain predictions
+- 📉 **Prediction Intervals** – Statistical confidence bounds for each prediction
+- 🎯 **High Accuracy** – R² = 0.91 (teaching), R² = 0.84 (prediction)
+
+---
+
+## 📑 Table of Contents
+
+- [Overview](#-overview)
+- [Results](#-results)
+- [Files](#files)
+- [Installation](#-installation)
+- [Data Preparation](#-data-preparation)
+- [Usage](#-usage)
+- [Output Files](#-output-files)
+- [Citation](#-citation)
+- [License](#-license)
+
+---
+
+## 🎯 Results
+
+### Model Performance
+
+![Prediction Results](Output/nh3_predicted_vs_observed_teach_pred.png)
+
+**Teaching Set (Nested Lasso CV):**
+- R² = 0.91
+- RMSE = 0.36 mM
+- MAE = 0.28 mM
+- AD-out = 4 samples
+
+**Prediction Set:**
+- R² = 0.84
+- RMSE = 0.59 mM
+- MAE = 0.38 mM
+- AD-out = 2 samples
+
+The model successfully identifies samples outside the applicability domain, ensuring reliable predictions within the trained parameter space.
+
+---
+
+## 📁 Files
+
+### Project Structure
+
+```
+OJIPLasso/
+├── ojip_lasso_regression.py    # Main analysis pipeline
+├── requirements.txt              # Python dependencies
+├── README.md                     # This file
+├── LICENSE                       # License information
+├── CSV/                          # Input data folder
+│   ├── Ao1.csv                  # OJIP measurements (species 1)
+│   ├── Cv1.csv, Cv2.csv, Cv3.csv # OJIP measurements (species 2)
+│   └── metadata.csv             # Sample metadata and labels
+└── Output/                       # Generated results
+    ├── smoothed_curves.csv
+    ├── ojip_variables.csv
+    ├── ojip_variables_with_metadata.csv
+    ├── selected_features_coefficients.csv
+    └── nh3_predicted_vs_observed_teach_pred.png
+```
+
+### Workflow Pipeline
+
+The `ojip_lasso_regression.py` script executes the following steps:
+
+1. **📥 Data Loading** – Reads metadata and AquaPen OJIP fluorescence files
+2. **🔄 Signal Processing** – Applies spline smoothing to raw fluorescence curves
+3. **🧮 Feature Extraction** – Calculates OJIP-derived photosynthetic parameters
+4. **🎓 Model Training** – Nested cross-validation with Lasso regression (1-SE rule)
+5. **🔍 Quality Control** – Applicability domain and prediction interval checks
+6. **📊 Visualization** – Generates publication-quality prediction plots
+7. **💾 Export** – Saves all processed data and model coefficients
+
+### Cross-platform Support
+
+- ✅ **Windows / macOS / Linux** – Fully cross-platform implementation
+- ✅ **Relative paths** – Run from any directory (repository root recommended)
+- ✅ **Headless compatible** – Non-interactive Matplotlib backend (Agg)
+- ✅ **Reproducible** – All inputs from `CSV/`, all outputs to `Output/`
+
+---
+
+## 🔧 Installation
+
+### Prerequisites
+
+- Python 3.8 or higher
+- pip package manager
+
+### Quick Install
+
+**Windows (PowerShell):**
+```powershell
+pip install -r requirements.txt
+```
+
+**Linux/macOS (bash/zsh):**
+```bash
+python3 -m pip install -r requirements.txt
+```
+
+### Virtual Environment (Recommended)
+
+**Windows (PowerShell):**
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+```
+
+**Linux/macOS (bash/zsh):**
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python3 -m pip install -r requirements.txt
+```
+
+---
+
+## 📋 Data Preparation
 
 This project expects AquaPen OJIP data in a strict "per-sheet wide" CSV format and a
 metadata CSV that maps numeric MeasurementIDs to sample records.
@@ -55,63 +172,89 @@ Typically, this is the index assigned by the AquaPen instrument. The included `C
 prefilled with example Cv/Ao samples — update `MeasurementID`, `NH3_mM`, and `OJIPFile` as needed.
 `NH3_mM` is the target for regression in this release.
 
-## Usage
+## 🚀 Usage
 
-1. Ensure your AquaPen per-sheet OJIP CSVs and `CSV/metadata.csv` follow the preparation section above.
-2. Adjust `DATA_TEACH` and `DATA_PRED` near the top of the script so they
-   describe the exact combinations you want in the teaching and prediction
-   groups. Each entry is a dictionary specifying column values to match.
-3. (First time only) Install dependencies:
+### Step 1: Prepare Your Data
 
-    - Windows (PowerShell):
+Ensure your AquaPen per-sheet OJIP CSVs and `CSV/metadata.csv` follow the [Data Preparation](#-data-preparation) section above.
 
-       ```powershell
-       pip install -r requirements.txt
-       ```
+### Step 2: Configure Training/Prediction Groups
 
-    - Linux/macOS (bash/zsh):
+Edit `DATA_TEACH` and `DATA_PRED` near the top of `ojip_lasso_regression.py` to specify the exact sample combinations for teaching and prediction groups. Each entry is a dictionary matching metadata columns.
 
-       ```bash
-       python3 -m pip install -r requirements.txt
-       ```
+### Step 3: Run the Analysis
 
-    Optional: use a virtual environment
+**Windows (PowerShell):**
+```powershell
+python ojip_lasso_regression.py
+```
 
-    - Windows (PowerShell):
+**Linux/macOS (bash/zsh):**
+```bash
+python3 ojip_lasso_regression.py
+```
 
-       ```powershell
-       python -m venv .venv; .\.venv\Scripts\Activate.ps1; pip install -r requirements.txt
-       ```
+> 💡 **Note:** The script uses relative paths and can be executed from any directory, but running from the repository root is recommended for clarity.
 
-    - Linux/macOS (bash/zsh):
+### Step 4: Review Results
 
-       ```bash
-       python3 -m venv .venv
-       source .venv/bin/activate
-       python3 -m pip install -r requirements.txt
-       ```
+All outputs are saved to the `Output/` folder:
+- ✅ `smoothed_curves.csv`
+- ✅ `ojip_variables.csv`
+- ✅ `ojip_variables_with_metadata.csv`
+- ✅ `selected_features_coefficients.csv`
+- ✅ `nh3_predicted_vs_observed_teach_pred.png`
 
-4. Run the script from the project root:
+---
 
-    - Windows (PowerShell):
+## 📤 Output Files
 
-       ```powershell
-       python ojip_lasso_regression.py
-       ```
+| File | Description |
+|------|-------------|
+| `smoothed_curves.csv` | Spline-smoothed fluorescence transients |
+| `ojip_variables.csv` | Calculated OJIP parameters for all samples |
+| `ojip_variables_with_metadata.csv` | OJIP parameters merged with sample metadata |
+| `selected_features_coefficients.csv` | Lasso model coefficients for selected features |
+| `nh3_predicted_vs_observed_teach_pred.png` | Prediction scatter plot with AD/PI validation |
 
-    - Linux/macOS (bash/zsh):
+---
 
-       ```bash
-       python3 ojip_lasso_regression.py
-       ```
+## 📖 Citation
 
-Note: You can execute the script from any directory. Because the script resolves paths relative to its own location, running it from the repository root is recommended for clarity.
+If you use this code in your research, please cite:
 
-5. Collect the outputs from `Output/`:
-   - `smoothed_curves.csv`
-   - `ojip_variables.csv`
-   - `ojip_variables_with_metadata.csv`
-   - `nh3_predicted_vs_observed_teach_pred.png`
+```bibtex
+@software{ojiplasso2024,
+  author = {Your Name},
+  title = {Quick Prediction of Inhibiting Compounds with OJIP & Lasso Regression},
+  year = {2024},
+  url = {https://github.com/MasaK2010/OJIPLasso}
+}
+```
 
-The script intentionally avoids optional arguments or extensive error
-handling to keep the logic transparent for readers who are new to Python.
+---
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+---
+
+## 🤝 Contributing
+
+Contributions, issues, and feature requests are welcome! The script intentionally avoids optional arguments or extensive error handling to keep the logic transparent for readers who are new to Python.
+
+---
+
+## 👤 Author
+
+**MasaK2010**
+- GitHub: [@MasaK2010](https://github.com/MasaK2010)
+
+---
+
+<div align="center">
+  
+**⭐ If you find this project useful, please consider giving it a star! ⭐**
+
+</div>
