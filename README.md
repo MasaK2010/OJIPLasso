@@ -10,7 +10,7 @@ This folder contains a compact Python script that reproduces the minimum data-pr
 
 ## 📊 Overview
 
-![Workflow Overview](ojip_workflow_overview.png)
+![Workflow Overview](Img/ojip_workflow_overview.png)
 
 **Chlorophyll fluorescence-based prediction of ammonia:** This project implements a Lasso-based regression model that integrates OJIP parameters with applicability domain (AD) and prediction interval (PI) validation. The workflow extracts fluorescent parameters from OJIP curves, performs nested cross-validation, and provides robust concentration predictions with quality checks.
 
@@ -42,7 +42,7 @@ This folder contains a compact Python script that reproduces the minimum data-pr
 
 ### Example Results 
 
-![Prediction Results](nh3_predicted_vs_observed_teach_pred.png)
+![Prediction Results](Img/nh3_predicted_vs_observed_teach_pred.png)
 
 **Teaching Set (Nested Lasso CV):**
 - R² = 0.91
