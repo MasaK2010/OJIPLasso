@@ -20,7 +20,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Tuple
-import os
 import warnings
 
 import matplotlib
@@ -32,7 +31,7 @@ import pandas as pd
 from scipy import integrate
 from scipy.interpolate import UnivariateSpline, LSQUnivariateSpline
 from sklearn.linear_model import Lasso
-from sklearn.model_selection import KFold, StratifiedKFold
+from sklearn.model_selection import StratifiedKFold
 from sklearn.pipeline import Pipeline
 from sklearn.exceptions import ConvergenceWarning
 
@@ -47,6 +46,93 @@ warnings.filterwarnings("ignore", category=UserWarning, module=r"scipy\.interpol
 from sklearn.preprocessing import StandardScaler
 from sklearn.compose import TransformedTargetRegressor
 from sklearn.neighbors import NearestNeighbors
+
+
+def _knn_ad_scores(
+    X_train: np.ndarray,
+    X_query: np.ndarray | None = None,
+    k: int = 5,
+    metric: str = 'euclidean',
+) -> tuple[np.ndarray, np.ndarray | None]:
+    """Return mean kNN distances for train (leave-one-out) and query sets."""
+    if X_train.ndim != 2:
+        raise ValueError("X_train must be 2D array")
+    n_train = X_train.shape[0]
+    k_eff = max(1, min(k, n_train - 1)) if n_train > 1 else 1
+    nn_train = NearestNeighbors(n_neighbors=min(k_eff + 1, n_train), metric=metric)
+    nn_train.fit(X_train)
+    d_tr, _ = nn_train.kneighbors(X_train)
+    tr_scores = d_tr[:, 1:].mean(axis=1) if d_tr.shape[1] > 1 else np.zeros(n_train, dtype=float)
+    if X_query is None or n_train == 0:
+        return tr_scores, None
+    nn_query = NearestNeighbors(n_neighbors=k_eff, metric=metric)
+    nn_query.fit(X_train)
+    d_q, _ = nn_query.kneighbors(X_query)
+    q_scores = d_q.mean(axis=1) if d_q.size else np.zeros(X_query.shape[0], dtype=float)
+    return tr_scores, q_scores
+
+
+def _compute_ad_knn_active(
+    model_lasso,
+    scaler: StandardScaler,
+    X_tr,
+    X_te,
+    *,
+    ad_quantile: float = 0.975,
+    k: int | None = None,
+    ad_weight_mode: str = 'none',
+    ad_weight_eps: float = 1e-8,
+) -> tuple[np.ndarray, np.ndarray, float]:
+    """Compute AD distances in active-feature space (coefficient-weighted kNN).
+    Returns (train_scores, query_scores, threshold).
+    """
+    cols = getattr(scaler, 'feature_names_in_', None)
+    if cols is not None:
+        if not isinstance(X_tr, pd.DataFrame):
+            X_tr = pd.DataFrame(X_tr, columns=list(cols))
+        else:
+            try:
+                X_tr = X_tr.loc[:, list(cols)]
+            except Exception:
+                pass
+        if not isinstance(X_te, pd.DataFrame):
+            X_te = pd.DataFrame(X_te, columns=list(cols))
+        else:
+            try:
+                X_te = X_te.loc[:, list(cols)]
+            except Exception:
+                pass
+    X_tr_s = scaler.transform(X_tr)
+    X_te_s = scaler.transform(X_te)
+    coef = getattr(model_lasso, 'coef_', None)
+    if coef is None:
+        act_cols = np.arange(X_tr_s.shape[1])
+    else:
+        act_cols = np.flatnonzero(np.asarray(coef) != 0)
+        if act_cols.size == 0:
+            act_cols = np.arange(X_tr_s.shape[1])
+    XtrA = X_tr_s[:, act_cols]
+    XteA = X_te_s[:, act_cols]
+    mode = str(ad_weight_mode or 'none').strip().lower()
+    if mode == 'abs_coef' and coef is not None and act_cols.size > 0:
+        try:
+            w = np.abs(np.asarray(coef, dtype=float).ravel()[act_cols])
+            w = np.where(np.isfinite(w), w, 0.0)
+            if float(np.sum(w)) > 0:
+                w = np.maximum(w, float(ad_weight_eps))
+                w = w / (float(np.mean(w)) + float(ad_weight_eps))
+                sw = np.sqrt(w)
+                XtrA = XtrA * sw
+                XteA = XteA * sw
+        except Exception:
+            pass
+    n_tr = XtrA.shape[0]
+    if k is None:
+        k = max(3, min(10, int(np.sqrt(max(n_tr, 1)))))
+        k = min(k, max(1, n_tr - 1))
+    tr_scores, te_scores = _knn_ad_scores(XtrA, XteA, k=k)
+    thr = float(np.quantile(tr_scores, ad_quantile)) if tr_scores.size else 0.0
+    return tr_scores, te_scores, thr
 
 # -----------------------------
 # User editable parameters
@@ -103,6 +189,27 @@ PI_METHOD: str = 'outer'
 PI_QUANTILE: float = 0.975
 MAD_TO_SIGMA: float = 1.4826
 PI_MAD_MULTIPLIER: float = 2.24
+AD_QUANTILE: float = 0.975
+AD_WEIGHT_MODE: str = 'abs_coef'
+
+RAW_LASSO_FEATURES: List[str] = [
+    "Vj",
+    "Vi",
+    "Fm/Fo",
+    "Fv/Fo",
+    "Fv/Fm",
+    "Fp/Fmax",
+    "Fo/Fm",
+    "Mo",
+    "Sm",
+    "N",
+    "VL",
+    "Vk",
+    "Vk/Vj",
+    "Vj/Vm",
+    "Vk/Vm",
+    "Vi/Vj",
+]
 
 
 @dataclass
@@ -301,6 +408,8 @@ def compute_ojip_variables(time_us: np.ndarray, signal: np.ndarray,
     vlast = (flast - fo) / fv if fv else np.nan
     vk_over_vj = vk / vj if vj not in (0, np.nan) else np.nan
     vi_over_vj = vi / vj if vj not in (0, np.nan) else np.nan
+    vj_over_vm = vj / (fm - fo) if (fm - fo) != 0 else np.nan
+    vk_over_vm = vk / (fm - fo) if (fm - fo) != 0 else np.nan
 
     fm_over_fo = fm / fo if fo else np.nan
     fv_over_fo = fv / fo if fo else np.nan
@@ -340,6 +449,7 @@ def compute_ojip_variables(time_us: np.ndarray, signal: np.ndarray,
         "Fm": fm,
         "Fm/Fo": fm_over_fo,
         "Fv/Fo": fv_over_fo,
+        "Fv/Fm": fv_over_fm,
         "Fv/Fm (phiPo)": fv_over_fm,
         "Vk": vk,
         "Vj": vj,
@@ -347,6 +457,8 @@ def compute_ojip_variables(time_us: np.ndarray, signal: np.ndarray,
         "VL": vl,
         "Vlast": vlast,
         "Vk/Vj": vk_over_vj,
+        "Vj/Vm": vj_over_vm,
+        "Vk/Vm": vk_over_vm,
         "Vi/Vj": vi_over_vj,
         "Fo/Fm": fo_over_fm,
         "Fp/Fmax": fp_over_fmax,
@@ -526,22 +638,6 @@ def nested_lasso_teach_predictions_grouped(X: np.ndarray, y: np.ndarray, meta: p
     return y_oof_mean, all_alphas, pi_abs_q95, pi_mad97_half
 
 
-def _knn_ad_scores(X_train: np.ndarray, X_query: np.ndarray | None = None, k: int = 5) -> Tuple[np.ndarray, np.ndarray | None]:
-    n_train = X_train.shape[0]
-    k_eff = max(1, min(k, n_train - 1)) if n_train > 1 else 1
-    nn_tr = NearestNeighbors(n_neighbors=min(k_eff + 1, n_train))
-    nn_tr.fit(X_train)
-    d_tr, _ = nn_tr.kneighbors(X_train)
-    tr_scores = d_tr[:, 1:].mean(axis=1) if d_tr.shape[1] > 1 else np.zeros(n_train, dtype=float)
-    if X_query is None or n_train == 0:
-        return tr_scores, None
-    nn_q = NearestNeighbors(n_neighbors=k_eff)
-    nn_q.fit(X_train)
-    d_q, _ = nn_q.kneighbors(X_query)
-    q_scores = d_q.mean(axis=1) if d_q.size else np.zeros(X_query.shape[0], dtype=float)
-    return tr_scores, q_scores
-
-
 def _select_by_queries(df: pd.DataFrame, queries: List[Dict[str, str]]) -> pd.DataFrame:
     if not queries:
         return df.copy()
@@ -566,6 +662,7 @@ def _metrics(y_true: np.ndarray, y_pred: np.ndarray) -> Dict[str, float]:
     ss_tot = float(np.sum((yt - float(np.mean(yt))) ** 2))
     r2 = float(1 - ss_res / ss_tot) if ss_tot != 0 else np.nan
     return {"RMSE": rmse, "MAE": mae, "R2": r2, "n": int(len(yt))}
+
 
 
 def run_pipeline() -> None:
@@ -646,7 +743,10 @@ def run_pipeline() -> None:
     meta_teach = meta_teach[meta_teach["Sample_ID"].isin(good_ids)].copy()
     meta_pred = meta_pred[meta_pred["Sample_ID"].isin(good_ids)].copy()
 
-    feature_cols = [col for col in variables_df.columns if not col.startswith("flag_")]
+    feature_cols = [col for col in RAW_LASSO_FEATURES if col in variables_df.columns]
+    missing_features = [col for col in RAW_LASSO_FEATURES if col not in variables_df.columns]
+    if missing_features:
+        raise ValueError(f"Missing required raw feature columns: {missing_features}")
     X_teach = variables_df.loc[meta_teach["Sample_ID"], feature_cols].to_numpy()
     y_teach = meta_teach["NH3_mM"].to_numpy(dtype=float)
     X_pred = variables_df.loc[meta_pred["Sample_ID"], feature_cols].to_numpy()
@@ -709,15 +809,18 @@ def run_pipeline() -> None:
         print(f"[Coefficients] Saved {int(df_coef['selected'].sum())} selected / {len(df_coef)} total features to 'selected_features_coefficients.csv'")
     except Exception as _e:
         print(f"[Coefficients] Failed to save coefficients CSV: {_e}")
-    act_cols = np.flatnonzero(coef != 0)
-    if act_cols.size == 0:
-        act_cols = np.arange(Xtr_s.shape[1])
-    XtrA = Xtr_s[:, act_cols]
-    XprA = Xpr_s[:, act_cols]
-    tr_scores, pr_scores = _knn_ad_scores(XtrA, XprA, k=max(3, min(10, int(np.sqrt(max(XtrA.shape[0], 1))))))
-    thr = float(np.quantile(tr_scores, 0.95)) if tr_scores.size else np.inf
-    ad_out_teach = tr_scores > thr
-    ad_out_pred = pr_scores > thr if pr_scores is not None else np.array([False] * len(y_pred_true))
+    tr_scores, pr_scores, thr = _compute_ad_knn_active(
+        lasso,
+        scaler,
+        X_teach,
+        X_pred,
+        ad_quantile=AD_QUANTILE,
+        ad_weight_mode=AD_WEIGHT_MODE,
+    )
+    ad_out_teach = np.zeros(len(y_teach), dtype=bool)
+    ad_out_pred = np.asarray(pr_scores, dtype=float) > float(thr) if pr_scores is not None else np.array([False] * len(y_pred_true))
+    active_features = int(np.count_nonzero(np.asarray(coef, dtype=float)))
+    print(f"[AD] weight_mode={AD_WEIGHT_MODE}; threshold={thr:.6g}; active_features={active_features}")
 
     conds = pd.concat([meta_teach["Condition"], meta_pred["Condition"]]).astype(str).unique().tolist()
     colors = plt.get_cmap("tab10", max(10, len(conds)))
@@ -731,7 +834,7 @@ def run_pipeline() -> None:
                        color=cond_to_color[cond],
                        marker=cond_to_marker[cond],
                        edgecolor='white', linewidth=0.6, s=32)
-        idx = np.where(ad_out_mask)[0]
+        idx = np.where(np.asarray(ad_out_mask, dtype=bool))[0] if ad_out_mask is not None else np.array([], dtype=int)
         if len(idx) > 0:
             ax.scatter(np.array(Xpred)[idx], np.array(Yobs)[idx],
                        color='none', edgecolor='black', marker='o', linewidth=1.2, s=60, facecolors='none', label='AD-out')
@@ -765,7 +868,7 @@ def run_pipeline() -> None:
         ax.legend(handles, labels, frameon=True, framealpha=0.9, fontsize=8)
 
     fig, axes = plt.subplots(1, 2, figsize=(10, 4), sharex=True, sharey=True)
-    _scatter_panel(axes[0], y_teach_pred_cv, y_teach, meta_teach, ad_out_teach,
+    _scatter_panel(axes[0], y_teach_pred_cv, y_teach, meta_teach, None,
                    f"Teaching (nested Lasso CV, \u03b1~{alpha_final:.6g}; PI±{pi_width:.2f})", pi_width)
     _scatter_panel(axes[1], y_pred_pred, y_pred_true, meta_pred, ad_out_pred,
                    f"Prediction (\u03b1={alpha_final:.6g}; PI±{pi_width:.2f})", pi_width)

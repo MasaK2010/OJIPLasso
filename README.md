@@ -18,7 +18,7 @@ This folder contains a compact Python script that reproduces the minimum data-pr
 
 - 🔬 **OJIP Parameter Extraction** – Automated calculation of chlorophyll fluorescence transient parameters
 - 📈 **Lasso Regression with Nested CV** – Robust feature selection using 1-SE rule
-- ✅ **Applicability Domain Check** – Automatic identification of out-of-domain predictions
+- ✅ **Applicability Domain Check** – Active-feature kNN distances with train-fold quantile thresholding
 - 📉 **Prediction Intervals** – Statistical confidence bounds for each prediction
 - 🎯 **High Accuracy** – R² = 0.91 (teaching), R² = 0.84 (prediction)
 
@@ -181,6 +181,8 @@ Ensure your AquaPen per-sheet OJIP CSVs and `CSV/metadata.csv` follow the [Data 
 ### Step 2: Configure Training/Prediction Groups
 
 Edit `DATA_TEACH` and `DATA_PRED` near the top of `ojip_lasso_regression.py` to specify the exact sample combinations for teaching and prediction groups. Each entry is a dictionary matching metadata columns.
+
+The core AD helper uses `ad_weight_mode='abs_coef'` by default, so the active-feature AD score is coefficient-weighted unless you override it in the call site.
 
 ### Step 3: Run the Analysis
 
