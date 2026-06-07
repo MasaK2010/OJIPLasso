@@ -1,0 +1,54 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite both this software and the associated article listed under preferred-citation."
+title: "OJIP Lasso"
+abstract: "Python code for processing OJIP chlorophyll fluorescence data and constructing sparse-regression models for free-ammonia prediction in algal cultures."
+authors:
+  - family-names: "Kishi"
+    given-names: "Masatoshi"
+    orcid: "https://orcid.org/0000-0003-0424-6705"
+repository-code: "https://github.com/MasaK2010/OJIPLasso"
+url: "https://github.com/MasaK2010/OJIPLasso"
+type: software
+license: "MIT"
+version: "1.0.0"
+identifiers:
+  - type: doi
+    value: "10.5281/zenodo.17398400"
+    description: "Zenodo archive for the OJIP Lasso software."
+keywords:
+  - "OJIP"
+  - "chlorophyll fluorescence"
+  - "free ammonia"
+  - "microalgae"
+  - "Lasso regression"
+  - "applicability domain"
+  - "prediction interval"
+preferred-citation:
+  type: article
+  title: "Reagent-Free Prediction of Free-Ammonia Toxicity in Algal Systems Using Chlorophyll Fluorescence Transients and Interpretable Sparse Regression"
+  authors:
+    - family-names: "Kishi"
+      given-names: "Masatoshi"
+      orcid: "https://orcid.org/0000-0003-0424-6705"
+    - family-names: "Karachaliou"
+      given-names: "Panagiota"
+    - family-names: "Fujiki"
+      given-names: "Tetsuichi"
+    - family-names: "Noguchi Aita"
+      given-names: "Maki"
+    - family-names: "Muñoz"
+      given-names: "Raúl"
+      orcid: "https://orcid.org/0000-0003-1207-6275"
+  journal: "Environmental Science & Technology"
+  year: 2026
+  doi: "10.1021/acs.est.5c18003"
+references:
+  - type: dataset
+    title: "Curated OJIP fluorescence and culture data for reagent-free prediction of free-ammonia toxicity in Chlorella, Acutodesmus, and Arthrospira"
+    authors:
+      - family-names: "Kishi"
+        given-names: "Masatoshi"
+        orcid: "https://orcid.org/0000-0003-0424-6705"
+    doi: "10.5281/zenodo.17358670"
+    year: 2026
+    repository: "Zenodo"
