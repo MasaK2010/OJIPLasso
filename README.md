@@ -6,6 +6,8 @@
 
 This folder contains a compact Python script that reproduces the minimum data-processing steps to predict photosynthetic inhibiting product (e.g., free ammonia) using OJIP parameters. It is written to be easy to read rather than feature complete.
 
+This repository is part of the supporting information for [Reagent-Free Prediction of Free-Ammonia Toxicity in Algal Systems Using Chlorophyll Fluorescence Transients and Interpretable Sparse Regression](https://doi.org/10.1021/acs.est.5c18003) by Masatoshi Kishi, Panagiota Karachaliou, Tetsuichi Fujiki, Maki Noguchi Aita, and Raúl Muñoz.
+
 ---
 
 ## 📊 Overview
